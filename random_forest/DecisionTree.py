@@ -1,174 +1,128 @@
 import numpy as np
-from collections import Counter
 from .Node import Node
 
-class DecisionTree:
-    """
-    Class which implements a decision tree classifier algorithm.
-    """
-    def __init__(self, min_samples_split=2, max_depth=5):
-        self.min_samples_split = min_samples_split
-        self.max_depth = max_depth
+class DecisionTree():
+    def __init__(self, min_samples_split=2, max_depth=2):
+        """ constructor """
+
+        # initialize the root of the tree
         self.root = None
 
-    @staticmethod
-    def _entropy(s):
-        """
-        Helper function, calculates entropy from an array of integer values.
+        # stopping conditions
+        self.min_samples_split = min_samples_split
+        self.max_depth = max_depth
 
-        :param s: list
-        :return: float, entropy value
-        """
-        # Convert to integers to avoid runtime errors
-        counts = np.bincount(np.array(s, dtype=np.int64))
-        # Probabilities of each class label
-        percentages = counts / len(s)
+    def build_tree(self, dataset, curr_depth=0):
+        """ recursive function to build the tree """
 
-        # Caclulate entropy
-        entropy = 0
-        for pct in percentages:
-            if pct > 0:
-                entropy += pct * np.log2(pct)
-        return -entropy
-
-    def _information_gain(self, parent, left_child, right_child):
-        """
-        Helper function, calculates information gain from a parent and two child nodes.
-
-        :param parent: list, the parent node
-        :param left_child: list, left child of a parent
-        :param right_child: list, right child of a parent
-        :return: float, information gain
-        """
-        num_left = len(left_child) / len(parent)
-        num_right = len(right_child) / len(parent)
-
-        # One-liner which implements the previously discussed formula
-        return self._entropy(parent) - (num_left * self._entropy(left_child) + num_right * self._entropy(right_child))
-
-    def _best_split(self, X, y):
-        """
-        Helper function, calculates the best split for given features and target
-
-        :param X: np.array, features
-        :param y: np.array or list, target
-        :return: dict
-        """
+        X, Y = dataset[:,:-1], dataset[:,-1]
+        num_samples, num_features = np.shape(X)
         best_split = {}
-        best_info_gain = -1
-        n_rows, n_cols = X.shape
+        # split until stopping conditions are met
+        if num_samples>=self.min_samples_split and curr_depth<=self.max_depth:
+            # find the best split
+            best_split = self.get_best_split(dataset, num_samples, num_features)
+            # check if information gain is positive
+            if best_split["var_red"]>0:
+                # recur left
+                left_subtree = self.build_tree(best_split["dataset_left"], curr_depth+1)
+                # recur right
+                right_subtree = self.build_tree(best_split["dataset_right"], curr_depth+1)
+                # return decision node
+                return Node(best_split["feature_index"], best_split["threshold"],
+                            left_subtree, right_subtree, best_split["var_red"])
 
-        # For every dataset feature
-        for f_idx in range(n_cols):
-            X_curr = X[:, f_idx]
-            # For every unique value of that feature
-            for threshold in np.unique(X_curr):
-                # Construct a dataset and split it to the left and right parts
-                # Left part includes records lower or equal to the threshold
-                # Right part includes records higher than the threshold
-                df = np.concatenate((X, y.reshape(1, -1).T), axis=1)
-                df_left = np.array([row for row in df if row[f_idx] <= threshold])
-                df_right = np.array([row for row in df if row[f_idx] > threshold])
+        # compute leaf node
+        leaf_value = self.calculate_leaf_value(Y)
+        # return leaf node
+        return Node(value=leaf_value)
 
-                # Do the calculation only if there's data in both subsets
-                if len(df_left) > 0 and len(df_right) > 0:
-                    # Obtain the value of the target variable for subsets
-                    y = df[:, -1]
-                    y_left = df_left[:, -1]
-                    y_right = df_right[:, -1]
+    def get_best_split(self, dataset, num_samples, num_features):
+        """ function to find the best split """
 
-                    # Caclulate the information gain and save the split parameters
-                    # if the current split if better then the previous best
-                    gain = self._information_gain(y, y_left, y_right)
-                    if gain > best_info_gain:
-                        best_split = {
-                            'feature_index': f_idx,
-                            'threshold': threshold,
-                            'df_left': df_left,
-                            'df_right': df_right,
-                            'gain': gain
-                        }
-                        best_info_gain = gain
+        # dictionary to store the best split
+        best_split = {}
+        max_var_red = -float("inf")
+        # loop over all the features
+        for feature_index in range(num_features):
+            feature_values = dataset[:, feature_index]
+            possible_thresholds = np.unique(feature_values)
+            # loop over all the feature values present in the data
+            for threshold in possible_thresholds:
+                # get current split
+                dataset_left, dataset_right = self.split(dataset, feature_index, threshold)
+                # check if childs are not null
+                if len(dataset_left)>0 and len(dataset_right)>0:
+                    y, left_y, right_y = dataset[:, -1], dataset_left[:, -1], dataset_right[:, -1]
+                    # compute information gain
+                    curr_var_red = self.variance_reduction(y, left_y, right_y)
+                    # update the best split if needed
+                    if curr_var_red>max_var_red:
+                        best_split["feature_index"] = feature_index
+                        best_split["threshold"] = threshold
+                        best_split["dataset_left"] = dataset_left
+                        best_split["dataset_right"] = dataset_right
+                        best_split["var_red"] = curr_var_red
+                        max_var_red = curr_var_red
+
+        # return best split
         return best_split
 
-    def _build(self, X, y, depth=0):
-        """
-        Helper recursive function, used to build a decision tree from the input data.
+    def split(self, dataset, feature_index, threshold):
+        """ function to split the data """
 
-        :param X: np.array, features
-        :param y: np.array or list, target
-        :param depth: current depth of a tree, used as a stopping criteria
-        :return: Node
-        """
-        n_rows, n_cols = X.shape
+        dataset_left = np.array([row for row in dataset if row[feature_index]<=threshold])
+        dataset_right = np.array([row for row in dataset if row[feature_index]>threshold])
+        return dataset_left, dataset_right
 
-        # Check to see if a node should be leaf node
-        if n_rows >= self.min_samples_split and depth <= self.max_depth:
-            # Get the best split
-            best = self._best_split(X, y)
-            # If the split isn't pure
-            if best['gain'] > 0:
-                # Build a tree on the left
-                left = self._build(
-                    X=best['df_left'][:, :-1],
-                    y=best['df_left'][:, -1],
-                    depth=depth + 1
-                )
-                right = self._build(
-                    X=best['df_right'][:, :-1],
-                    y=best['df_right'][:, -1],
-                    depth=depth + 1
-                )
-                return Node(
-                    feature=best['feature_index'],
-                    threshold=best['threshold'],
-                    data_left=left,
-                    data_right=right,
-                    gain=best['gain']
-                )
-        # Leaf node - value is the most common target value
-        return Node(
-            value=Counter(y).most_common(1)[0][0]
-        )
+    def variance_reduction(self, parent, l_child, r_child):
+        """ function to compute variance reduction """
 
-    def fit(self, X, y):
-        """
-        Function used to train a decision tree classifier model.
+        weight_l = len(l_child) / len(parent)
+        weight_r = len(r_child) / len(parent)
+        reduction = np.var(parent) - (weight_l * np.var(l_child) + weight_r * np.var(r_child))
+        return reduction
 
-        :param X: np.array, features
-        :param y: np.array or list, target
-        :return: None
-        """
-        # Call a recursive function to build the tree
-        self.root = self._build(X, y)
+    def calculate_leaf_value(self, Y):
+        """ function to compute leaf node """
 
-    def _predict(self, x, tree):
-        """
-        Helper recursive function, used to predict a single instance (tree traversal).
+        val = np.mean(Y)
+        return val
 
-        :param x: single observation
-        :param tree: built tree
-        :return: float, predicted class
-        """
-        # Leaf node
-        if tree.value != None:
-            return tree.value
-        feature_value = x[tree.feature]
+    def print_tree(self, tree=None, indent=" "):
+        """ function to print the tree """
 
-        # Go to the left
-        if feature_value <= tree.threshold:
-            return self._predict(x=x, tree=tree.data_left)
+        if not tree:
+            tree = self.root
 
-        # Go to the right
-        if feature_value > tree.threshold:
-            return self._predict(x=x, tree=tree.data_right)
+        if tree.value is not None:
+            print(tree.value)
+
+        else:
+            print("X_"+str(tree.feature_index), "<=", tree.threshold, "?", tree.var_red)
+            print("%sleft:" % (indent), end="")
+            self.print_tree(tree.left, indent + indent)
+            print("%sright:" % (indent), end="")
+            self.print_tree(tree.right, indent + indent)
+
+    def fit(self, X, Y):
+        """ function to train the tree """
+
+        dataset = np.concatenate((X, Y), axis=1)
+        self.root = self.build_tree(dataset)
+
+    def make_prediction(self, x, tree):
+        """ function to predict new dataset """
+
+        if tree.value!=None: return tree.value
+        feature_val = x[tree.feature_index]
+        if feature_val<=tree.threshold:
+            return self.make_prediction(x, tree.left)
+        else:
+            return self.make_prediction(x, tree.right)
 
     def predict(self, X):
-        """
-        Function used to classify new instances.
+        """ function to predict a single data point """
 
-        :param X: np.array, features
-        :return: np.array, predicted classes
-        """
-        # Call the _predict() function for every observation
-        return [self._predict(x, self.root) for x in X]
+        preditions = [self.make_prediction(x, self.root) for x in X]
+        return preditions

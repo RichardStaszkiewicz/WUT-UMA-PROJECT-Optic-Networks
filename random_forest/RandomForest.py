@@ -69,12 +69,6 @@ class RandomForest:
         for tree in self.decision_trees:
             y.append(tree.predict(X))
 
-        # Reshape so we can find the most common value
         y = np.swapaxes(a=y, axis1=0, axis2=1)
-
-        # Use majority voting for the final prediction
-        predictions = []
-        for preds in y:
-            counter = Counter(preds)
-            predictions.append(counter.most_common(1)[0][0])
+        predictions = [np.mean(pred) for pred in y]
         return predictions

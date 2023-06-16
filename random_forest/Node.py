@@ -1,11 +1,12 @@
-class Node:
-    """
-    Helper class which implements a single tree node.
-    """
-    def __init__(self, feature=None, threshold=None, data_left=None, data_right=None, gain=None, value=None):
-        self.feature = feature
+class Node():
+    def __init__(self, feature_index=None, threshold=None, left=None, right=None, var_red=None, value=None):
+
+        # for decision node
+        self.feature_index = feature_index
         self.threshold = threshold
-        self.data_left = data_left
-        self.data_right = data_right
-        self.gain = gain
+        self.left = left
+        self.right = right
+        self.var_red = var_red
+
+        # for leaf node
         self.value = value
