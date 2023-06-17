@@ -6,10 +6,11 @@ class RandomForest:
     '''
     A class that implements Random Forest algorithm from scratch.
     '''
-    def __init__(self, num_trees=25, min_samples_split=2, max_depth=5):
+    def __init__(self, num_trees=25, min_samples_split=2, max_depth=5, verbose=False):
         self.num_trees = num_trees
         self.min_samples_split = min_samples_split
         self.max_depth = max_depth
+        self.verbose = verbose
         # Will store individually trained decision trees
         self.decision_trees = []
 
@@ -54,7 +55,10 @@ class RandomForest:
                 # Save the classifier
                 self.decision_trees.append(clf)
                 num_built += 1
+                if self.verbose:
+                    print(f"Tree {num_built}: Build successfull")
             except Exception as e:
+                print("e")
                 continue
 
     def predict(self, X):
