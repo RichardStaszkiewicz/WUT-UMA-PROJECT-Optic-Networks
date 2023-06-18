@@ -6,6 +6,8 @@ from sklearn.linear_model import LinearRegression
 from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import cross_validate
+from sklearn.metrics import mean_absolute_error
+import time
 
 def preprocess(all_data, target_name):
     target = all_data[target_name]
@@ -37,18 +39,22 @@ if __name__ == "__main__":
         if d in all_data.columns:
             all_data = all_data.drop(columns=d)
     all_data[categorical] = all_data[categorical].astype(str)
-    data, target, preprocessor = preprocess(all_data.sample(100, random_state=42), "OSNR")
+    data, target, preprocessor = preprocess(all_data, "OSNR")
+    st = time.time()
     model = make_pipeline(preprocessor, LinearRegression())
     data_train, data_test, target_train, target_test = train_test_split(
         data, target, random_state=42
     )
     _ = model.fit(data_train, target_train)
-    cv_results = cross_validate(model, data, target, cv=5)
-    scores = cv_results["test_score"]
+    cv_results = cross_validate(model, data, target, cv=3, scoring="neg_mean_absolute_error")
+    et = time.time()
+    scores = -1 * cv_results["test_score"]
     print(
         "The mean cross-validation accuracy is: "
         f"{scores.mean():.3f} ± {scores.std():.3f}"
     )
+    print(scores)
+    print(et - st)
     # print(model.score(data_test, target_test))
 
     # print(model)
