@@ -37,9 +37,7 @@ def calculate_probability_for_discrete_attributes(data, attributes):
     for attribute in attributes:
         count = data[attribute].value_counts().to_dict()
         count_all = sum([x for x in count.values()])
-        probs[attribute] = {
-            key: count[key] / count_all for key in count.keys()
-        }
+        probs[attribute] = {key: count[key] / count_all for key in count.keys()}
 
     return probs
 
@@ -72,9 +70,7 @@ def create_model(data, target, continuous_attributes, discrete_attributes):
     return avgs, stdevs, probs, class_probs
 
 
-def calculate_indv_in_class_prob(
-    class_avgs, class_stdevs, probs, class_prob, indv
-):
+def calculate_indv_in_class_prob(class_avgs, class_stdevs, probs, class_prob, indv):
     probability = class_prob
     for attribute in class_avgs.keys():
         probability *= calculate_probability_norm(
@@ -113,7 +109,7 @@ def cross_validation(
     k,
 ):
     step = len(train_data) // k
-    mae = []
+    mae, mse = [], []
     for i in range(k):
         test_data = train_data.iloc[step * i : step * (i + 1)]
         learn_data = pd.concat(
@@ -141,14 +137,16 @@ def cross_validation(
         )
 
         absolute_error = 0
+        square_error = 0
         for i, idx in enumerate(test_tar.index):
-            prediction = predict(
-                avgs, stdevs, probs, class_probs, test_data.iloc[i]
-            )
+            prediction = predict(avgs, stdevs, probs, class_probs, test_data.iloc[i])
             absolute_error += abs(test_tar[idx] - prediction.mid)
+            square_error += (test_tar[idx] - prediction.mid) ** 2
         mae.append(absolute_error / len(test_data))
+        mse.append(square_error / len(test_data))
     return (
-        sum(mae) / k,
+        mae,
+        mse,
         create_model(
             train_data,
             pd.cut(x=train_target, bins=bins),
@@ -165,22 +163,27 @@ if __name__ == "__main__":
     test_data = data.iloc[len(data) // 4 :]
 
     bins = list(range(0, 80, 5))
-    mae, (avgs, stdevs, probs, class_probs) = cross_validation(
+    mae, mse, (avgs, stdevs, probs, class_probs) = cross_validation(
         train_data,
         train_data["OSNR"],
         bins,
         ["hop_len", "no_of_hops", "avg_hop_loss"],
         ["transponder_modulation", "transponder_bitrate"],
-        6,
+        5,
     )
 
-    print("MAE cross validation:", mae)
+    print("mean MAE cross validation:", average(mae))
+    print("stdev MAE cross validation:", stdev(mae))
+
+    print("mean MRSE cross validation:", average([np.sqrt(x) for x in mse]))
+    print("stdev MRSE cross validation:", stdev([np.sqrt(x) for x in mse]))
 
     abslute_error = 0
+    squere_error = 0
     for i, idx in enumerate(test_data.index):
-        prediction = predict(
-            avgs, stdevs, probs, class_probs, test_data.iloc[i]
-        )
+        prediction = predict(avgs, stdevs, probs, class_probs, test_data.iloc[i])
         abslute_error += abs(test_data["OSNR"][idx] - prediction.mid)
+        squere_error += (test_data["OSNR"][idx] - prediction.mid) ** 2
 
     print("MAE without cross validation:", abslute_error / len(test_data))
+    print("MRSE without cross validation:", np.sqrt(squere_error / len(test_data)))
